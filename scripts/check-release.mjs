@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+const p = JSON.parse(readFileSync('package.json', 'utf8'));
+assert.equal(p.private, false, 'Release is blocked until the owner approves publication');
+assert.ok(['ISC', 'MIT', 'BSD-3-Clause'].includes(p.license), 'Owner must select the SDK license');
+assert.ok(existsSync('LICENSE'), 'Selected license text must be included');
+assert.equal(p.name, '@extriber/tripmeter-browser');
+assert.equal(p.publishConfig.access, 'public');
+assert.equal(p.publishConfig.tag, 'next', 'Release candidates must not replace latest');
+assert.equal(p.repository.url, 'git+https://github.com/extriber/tripmeter-browser.git');
+assert.match(p.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+console.log(`Validated release metadata for ${p.name}@${p.version}`);
