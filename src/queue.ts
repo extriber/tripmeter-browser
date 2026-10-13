@@ -21,11 +21,22 @@ export class Queue implements EventStore {
   enqueue(bucket: string, events: SdkEvent[]): void {
     // Validate the full emission before persisting even its session lifecycle events.
     const entries = events.map((event) => ({ event, value: this.encode(bucket, event) }));
+    if (this.keys().length + entries.length > 1000) throw new TripmeterError("capacity");
     for (const { event, value } of entries) {
       this.storage.setItem(
         `${this.prefix}${String(Date.now()).padStart(16, "0")}:${String(event.event_id).padStart(16, "0")}:${event.insert_id}`,
         JSON.stringify(value),
       );
+    }
+  }
+  assertReadable(): void {
+    try {
+      for (const key of this.keys().slice(0, this.batchLimit)) {
+        const raw = this.storage.getItem(key);
+        if (raw) this.authorize(JSON.parse(raw));
+      }
+    } catch {
+      throw new TripmeterError("storage");
     }
   }
   private encode(bucket: string, event: SdkEvent): EventStorePayload {

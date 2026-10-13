@@ -2,6 +2,7 @@ import { validateProperties } from "./validation.js";
 import { Queue } from "./queue.js";
 import { StateStore, touchSession, type State } from "./state.js";
 import { Transport } from "./transport.js";
+import { ScopedStorage } from "./storage.js";
 import {
   TripmeterError,
   type ClientOptions,
@@ -22,15 +23,15 @@ export class TripmeterClient {
   private disabled = false;
   private readonly automaticFlush = () => {
     if (!this.transport.canFlushAutomatically()) return;
-    void this.flush().catch((error) => this.report(error));
+    void this.flush().catch(() => {});
   };
   private readonly hiddenFlush = () => {
     if (document.visibilityState === "hidden" && this.transport.canFlushAutomatically())
-      void this.flush(true).catch((error) => this.report(error));
+      void this.flush(true).catch(() => {});
   };
   private readonly pagehideFlush = () => {
     if (!this.transport.canFlushAutomatically()) return;
-    void this.flush(true).catch((error) => this.report(error));
+    void this.flush(true).catch(() => {});
   };
 
   constructor(
@@ -38,8 +39,10 @@ export class TripmeterClient {
     private readonly scope: string,
     endpoint: URL,
   ) {
-    this.store = new StateStore(localStorage, `TRIPMETER:browser:v1:${scope}:state`);
-    this.queue = new Queue(localStorage, `TRIPMETER:browser:v1:${scope}:queue:`, options.apiKey);
+    const prefix = `TRIPMETER:browser:v1:${scope}:`;
+    const storage = new ScopedStorage(prefix, (error) => this.report(error));
+    this.store = new StateStore(storage, `${prefix}state`);
+    this.queue = new Queue(storage, `${prefix}queue:`, options.apiKey);
     this.transport = new Transport(endpoint, this.queue);
     this.guard(() => {
       const state = this.store.read();
@@ -64,7 +67,8 @@ export class TripmeterClient {
     try {
       action();
     } catch (error) {
-      if (!(error instanceof TripmeterError && error.code === "payload")) this.disabled = true;
+      if (!(error instanceof TripmeterError && ["payload", "capacity"].includes(error.code)))
+        this.disabled = true;
       this.report(error);
     }
   }
@@ -174,8 +178,14 @@ export class TripmeterClient {
     });
   }
   async flush(keepalive = false): Promise<void> {
-    if (this.destroyed || this.disabled || this.store.read().optedOut) return;
-    await this.transport.flush(keepalive);
+    try {
+      if (this.destroyed || this.disabled || this.store.read().optedOut) return;
+      await this.transport.flush(keepalive);
+    } catch (error) {
+      const failure = error instanceof TripmeterError ? error : new TripmeterError("storage");
+      this.report(failure);
+      throw failure;
+    }
   }
   destroy(): void {
     if (this.destroyed) return;

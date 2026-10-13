@@ -34,7 +34,8 @@ ESM 파일은 `dist/index.js`, TypeScript 정의는 `dist/index.d.ts`입니다.
 
 `apiKey`와 `bucket`은 필수이며 추정하지 않습니다. 기본 endpoint는
 `https://collect.tripstore.kr/tripmeter`입니다. 검증 서버를 사용할 때만
-`endpoint`에 같은 경로 구조의 base URL을 지정합니다.
+`endpoint`에 같은 경로 구조의 base URL을 지정합니다. 운영에서는 기본 HTTPS 주소를 사용합니다.
+로컬 수집기 검증에는 HTTP 주소도 명시할 수 있습니다. 개발 화면이 HTTP여도 운영 HTTPS 수집기로 전송할 수 있습니다.
 한 페이지에서는 동일 endpoint/bucket에 한 인스턴스만 만들고 재사용합니다.
 
 ## 공개 API와 데이터 의미
@@ -62,17 +63,23 @@ NOL ID와 트립스토어 ID는 자동 병합하지 않습니다.
 
 ## 웹뷰와 전달 계약
 
-HTTPS secure context, JavaScript, localStorage, fetch, crypto.randomUUID,
+secure context(HTTPS 또는 브라우저가 신뢰하는 localhost), JavaScript, fetch, crypto.randomUUID,
 structuredClone을 지원하는 웹뷰가 필요합니다. Android는 DOM storage를 활성화하고
 WKWebView는 영속 data store를 사용해야 재진입 뒤 ID와 큐를 유지할 수 있습니다.
-저장 실패 시 메모리 큐나 임의 ID로 우회하지 않습니다. `onError`에 알리고 해당
-인스턴스의 수집을 중단합니다. host의 이벤트 핸들러로 수집 오류를 던지지 않습니다.
+저장소가 차단되거나 저장 중 가득 차면 `onError`에 storage 오류를 알리고 그 인스턴스는
+메모리에서 수집을 이어갑니다. 기존에 읽은 큐와 ID는 메모리에 유지하지만 새로고침 이후의
+보존은 보장하지 않습니다. 손상된 큐는 임의 삭제하지 않고 flush를 storage 오류로 거부합니다.
+track/identify 오류는 host 이벤트 핸들러로 던지지 않으며, 명시적 flush 오류는 Promise로 반환합니다.
 
 큐와 상태는 endpoint/bucket별로 격리합니다. API Key는 저장하지 않고 전송 시점에
 적용하므로, 같은 bucket에서 키를 교체해도 미전송 이벤트 ID와 사용자 상태가 유지됩니다.
 기존 인스턴스를 destroy한 후 새 키로 다시 생성합니다. 개발/운영은 다른 키를 사용합니다.
 재전송은 원래 insert_id를 유지합니다. 여러 탭에서 동시에 보내면 재전송이 발생할 수
 있으며 서버의 bucket별 이벤트 중복 제거를 사용합니다. exactly-once 전송을 주장하지 않습니다.
+대기 이벤트는 세션 이벤트를 포함해 최대 1,000개입니다. 가득 차면 기존 이벤트를 보존하고
+새 track/identify 호출 전체를 capacity 오류로 거부합니다. 전송 후 공간이 생기면 다시 수집합니다.
+큐에는 TTL을 두지 않습니다. 사용자 속성은 reset으로 초기화하며, opt-out은 대기 큐를 비웁니다.
+이벤트와 사용자 속성은 브라우저 저장소에서 읽을 수 있으므로 비밀번호·인증 토큰을 넣지 않습니다.
 
 정상 상태의 전송 간격은 1초이며 30건 이상이면 전송을 시도합니다.
 일시적 전송 실패에는 1초부터 최대 60초까지 간격을 늘립니다.
@@ -92,7 +99,7 @@ WKWebView는 영속 data store를 사용해야 재진입 뒤 ID와 큐를 유지
 현재 트립스토어 웹/앱의 키 전용 요청과 저장소를 변경하지 않습니다. 기존 SDK의
 교체나 데이터 이관은 이 패키지에 포함하지 않습니다.
 
-`pnpm --filter @extriber/tripmeter-browser test`는 bucket 격리, 속성 타입,
+`npm test`는 bucket 격리, 속성 타입,
 로그아웃, 세션 경계, 실패 큐 복원, 키 교체, opt-out, 저장 실패 격리를 검증합니다.
 `build`, `typecheck`, `lint`를 함께 통과해야 배포합니다. 실제 제휴사 Android/iOS
 웹뷰 검증은 해당 앱 환경에서 별도로 수행해야 합니다.
@@ -113,5 +120,5 @@ WKWebView는 영속 data store를 사용해야 재진입 뒤 ID와 큐를 유지
 
 [외부 전달 목록](https://github.com/extriber/tripmeter-browser/blob/master/docs/PARTNER-HANDOFF.md) · [릴리스 승인 절차](https://github.com/extriber/tripmeter-browser/blob/master/docs/RELEASING.md)
 
-SDK 자체의 라이선스는 소유자 확정 전입니다. 현재 npm 발행은 차단돼 있습니다.
+SDK 자체는 ISC 라이선스입니다. 현재 npm 발행은 소유자 승인 전까지 차단돼 있습니다.
 배포에 포함되는 외부 코드의 고지는 THIRD_PARTY_NOTICES.txt를 참조합니다.

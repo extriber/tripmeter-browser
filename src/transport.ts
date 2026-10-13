@@ -24,6 +24,7 @@ export class Transport {
     return this.pending;
   }
   private async send(keepalive: boolean): Promise<void> {
+    this.queue.assertReadable();
     let failure: TripmeterError | undefined;
     const emitter = newEmitter({
       endpoint: this.endpoint.host,
