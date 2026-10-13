@@ -31,6 +31,8 @@ jobs:
         run: node scripts/check-package.mjs --prepared
       - name: Submit for npm owner approval
         run: node scripts/stage-release.mjs
+        env:
+          NPM_CONFIG_LOGLEVEL: verbose
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: npm-staged-package
