@@ -1,0 +1,37 @@
+name: Stage SDK release for owner approval
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: npm-stage
+  cancel-in-progress: false
+jobs:
+  stage:
+    if: github.ref == 'refs/heads/master'
+    environment: npm-stage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org/
+      - run: npm install --global npm@11.15.0
+      - run: npm ci --ignore-scripts
+      - name: Verify approved release metadata
+        run: node scripts/check-release.mjs
+      - run: npm run typecheck && npm test && npm run lint && npm run build && npm run test:package
+      - name: Prepare the exact reviewed artifact
+        run: npm pack --ignore-scripts --json > pack-result.json
+      - name: Submit for npm owner approval
+        run: node scripts/stage-release.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: npm-staged-package
+          path: |
+            *.tgz
+            pack-result.json

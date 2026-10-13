@@ -1,0 +1,54 @@
+{
+  "name": "@extriber/tripmeter-browser",
+  "version": "1.0.0-rc.1",
+  "description": "Tripmeter browser and WebView event collection SDK",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "lint": "oxlint src && oxfmt --check src",
+    "test:package": "node scripts/check-package.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.6",
+    "happy-dom": "20.14.5",
+    "oxfmt": "0.68.0",
+    "oxlint": "1.83.0",
+    "typescript": "7.0.2",
+    "vite": "7.3.6",
+    "vitest": "4.1.11",
+    "@snowplow/tracker-core": "4.10.2"
+  },
+  "packageManager": "npm@11.15.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/extriber/tripmeter-browser.git"
+  },
+  "homepage": "https://github.com/extriber/tripmeter-browser#readme",
+  "bugs": {
+    "url": "https://github.com/extriber/tripmeter-browser/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "next"
+  }
+}
