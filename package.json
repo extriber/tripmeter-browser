@@ -36,8 +36,8 @@
     "@snowplow/tracker-core": "4.10.2"
   },
   "packageManager": "npm@11.15.0",
-  "private": true,
-  "license": "UNLICENSED",
+  "private": false,
+  "license": "ISC",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/extriber/tripmeter-browser.git"

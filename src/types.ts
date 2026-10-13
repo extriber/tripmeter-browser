@@ -9,7 +9,7 @@ export type ClientOptions = {
 };
 export class TripmeterError extends Error {
   constructor(
-    public readonly code: "configuration" | "storage" | "delivery" | "payload",
+    public readonly code: "configuration" | "storage" | "delivery" | "payload" | "capacity",
     public readonly status?: number,
   ) {
     super(`Tripmeter ${code} failure${status === undefined ? "" : ` (${status})`}`);

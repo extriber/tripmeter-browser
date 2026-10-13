@@ -28,6 +28,18 @@ function requests() {
   vi.stubGlobal("fetch", fetch);
   return { batches, fetch };
 }
+test.each(["http://localhost:8080/tripmeter", "http://192.168.0.10:8080/tripmeter"])(
+  "supports an explicitly configured development collector: %s",
+  async (endpoint) => {
+    const { fetch } = requests();
+    const c = createClient({ apiKey: "test-key", bucket: "channel_nol_dev", endpoint });
+    clients.push(c);
+    c.track("development_view");
+    await c.flush();
+    expect(fetch.mock.calls[0][0].url).toBe(`${endpoint}/com.snowplowanalytics.snowplow/tp2`);
+    expect(fetch.mock.calls[0][0].credentials).toBe("omit");
+  },
+);
 test("sends an explicit bucket, identity, typed properties and one stable event ID", async () => {
   const { batches } = requests();
   const c = client("channel_nol_dev");
@@ -100,8 +112,8 @@ test("keeps session at exactly 30 minutes and starts a new session after inactiv
   expect(events.later.session_id).not.toBe(events.first.session_id);
   expect(events.session_end.time).toBe(events.boundary.time + 1);
 });
-test("requires bucket and rejects storage failure without throwing into host track handlers", () => {
-  requests();
+test("continues sending in memory when persistent storage is unavailable", async () => {
+  const { batches } = requests();
   expect(() => client("")).toThrow();
   const onError = vi.fn();
   vi.stubGlobal("localStorage", {
@@ -113,7 +125,92 @@ test("requires bucket and rejects storage failure without throwing into host tra
   const c = createClient({ apiKey: "key", bucket: "dev", onError });
   clients.push(c);
   expect(() => c.track("view", {})).not.toThrow();
-  expect(onError).toHaveBeenCalled();
+  await c.flush();
+  expect(batches.some((b) => b.event.event_type === "view")).toBe(true);
+  expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "storage" }));
+});
+
+test("contains a denied localStorage getter and keeps collecting", async () => {
+  const { batches } = requests();
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    get() {
+      throw new DOMException("Denied", "SecurityError");
+    },
+  });
+  try {
+    const c = client("denied-storage");
+    c.track("view");
+    await c.flush();
+    expect(batches.some((b) => b.event.event_type === "view")).toBe(true);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", descriptor);
+  }
+});
+
+test("preserves pending events when storage fills during collection", async () => {
+  const { batches } = requests();
+  const c = client("storage-full");
+  c.track("before_full");
+  const spy = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+    throw new DOMException("Full", "QuotaExceededError");
+  });
+  try {
+    c.track("after_full");
+    await c.flush();
+    expect(batches.map((b) => b.event.event_type)).toEqual([
+      "session_start",
+      "before_full",
+      "after_full",
+    ]);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
+test("reports a corrupt pending event instead of resolving a flush without sending", async () => {
+  const { fetch } = requests();
+  const onError = vi.fn();
+  const c = createClient({ apiKey: "key", bucket: "corrupt", onError });
+  clients.push(c);
+  c.track("view");
+  const key = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).find(
+    (key) => key.includes(":queue:"),
+  )!;
+  localStorage.setItem(key, "invalid-json");
+  await expect(c.flush()).rejects.toMatchObject({ code: "storage" });
+  expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "storage" }));
+  expect(fetch).not.toHaveBeenCalled();
+  expect(localStorage.getItem(key)).toBe("invalid-json");
+});
+
+test("bounds pending events at 1000 and resumes after the queue drains", async () => {
+  const { batches } = requests();
+  const onError = vi.fn();
+  const c = createClient({ apiKey: "key", bucket: "capacity", onError });
+  clients.push(c);
+  c.track("seed");
+  const seedKey = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).find(
+    (key) => key.includes(":queue:"),
+  )!;
+  const seed = JSON.parse(localStorage.getItem(seedKey)!);
+  const prefix = seedKey.slice(0, seedKey.indexOf(":queue:") + 7);
+  for (let i = 0; i < 998; i++) {
+    const stored = structuredClone(seed);
+    const envelope = JSON.parse(stored.payload.ue_pr);
+    envelope.data.data.event.insert_id = `restored-${i}`;
+    stored.payload.ue_pr = JSON.stringify(envelope);
+    localStorage.setItem(`${prefix}restored-${i}`, JSON.stringify(stored));
+  }
+  c.track("overflow");
+  expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "capacity" }));
+  await c.flush();
+  expect(batches).toHaveLength(1000);
+  expect(batches.some((b) => b.event.event_type === "overflow")).toBe(false);
+  c.track("after_drain");
+  await c.flush();
+  expect(batches.at(-1).event.event_type).toBe("after_drain");
 });
 
 test("fixes the destination at initialization even if the caller mutates options", async () => {
