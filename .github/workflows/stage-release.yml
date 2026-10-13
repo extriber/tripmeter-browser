@@ -24,9 +24,11 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Verify approved release metadata
         run: node scripts/check-release.mjs
-      - run: npm run typecheck && npm test && npm run lint && npm run build && npm run test:package
+      - run: npm run typecheck && npm test && npm run lint && npm run build
       - name: Prepare the exact reviewed artifact
         run: npm pack --ignore-scripts --json > pack-result.json
+      - name: Verify the exact artifact to be staged
+        run: node scripts/check-package.mjs --prepared
       - name: Submit for npm owner approval
         run: node scripts/stage-release.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

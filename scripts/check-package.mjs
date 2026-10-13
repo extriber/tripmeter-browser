@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -5,15 +6,23 @@ import { join, resolve } from 'node:path';
 import assert from 'node:assert/strict';
 const directory = mkdtempSync(join(tmpdir(), 'tripmeter-package-'));
 try {
-  const result = JSON.parse(execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], { encoding: 'utf8' }));
+  const prepared = process.argv.includes('--prepared');
+  const result = prepared
+    ? JSON.parse(readFileSync('pack-result.json', 'utf8'))
+    : JSON.parse(execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], { encoding: 'utf8' }));
   // npm 11 returns an array; npm 12 keys the result by package name.
   const packed = Array.isArray(result) ? result[0] : result['@extriber/tripmeter-browser'];
   assert.ok(packed, 'npm pack did not produce the requested artifact');
   const allowed = /^(dist\/[^/]+\.(js|cjs|ts)|package\.json|README\.md|THIRD_PARTY_NOTICES\.txt|LICENSE)$/;
   for (const file of packed.files) assert.match(file.path, allowed, `Unexpected published file: ${file.path}`);
-  execFileSync('tar', ['-xzf', join(directory, packed.filename), '-C', directory]);
+  assert.match(packed.filename, /^extriber-tripmeter-browser-[0-9A-Za-z.-]+\.tgz$/);
+  const archive = prepared ? resolve(packed.filename) : join(directory, packed.filename);
+  const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
+  assert.equal(integrity, packed.integrity);
+  execFileSync('tar', ['-xzf', archive, '-C', directory]);
   const manifest = JSON.parse(readFileSync(join(directory, 'package/package.json'), 'utf8'));
   assert.equal(manifest.name, '@extriber/tripmeter-browser');
+  assert.equal(manifest.version, JSON.parse(readFileSync('package.json', 'utf8')).version);
   assert.equal(Object.keys(manifest.dependencies ?? {}).length, 0);
   for (const hook of ['preinstall', 'install', 'postinstall']) assert.equal(manifest.scripts?.[hook], undefined);
   const { createClient } = await import(`file://${join(directory, 'package/dist/index.js')}`);
